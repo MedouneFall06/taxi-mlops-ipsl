@@ -1,31 +1,28 @@
-from pyspark import pipelines as dp
+import dlt
 from pyspark.sql import functions as F
 
-@dp.materialized_view(
-    comment="Model metadata and registration information"
+# Déclaration de la Streaming Table cible
+dlt.create_streaming_table(
+    name="ml_model_registry",
+    comment="Registre historique comparatif des versions du modèle (v1.0, v2.0, ...)"
 )
-def ml_model_registry():
+
+@dlt.append_flow(target="ml_model_registry")
+def ml_model_registry_flow():
     """
-    ML Model Registry
-    - Stores model metadata and version information
-    - Tracks model performance metrics
-    - Provides model lineage information
-    
-    Note: Actual MLflow model registration should be done outside the pipeline.
-    This dataset tracks model metadata within the pipeline.
+    append_flow avec readStream :
+    Chaque exécution AJOUTE une ligne sans écraser l'historique.
+    Changer model_version ("v1.0" → "v2.0") entre deux runs pour comparer.
     """
-    # Read training metrics
-    metrics_df = spark.read.table("ml_model_training_[votrePrenom_Nom]")
-    
-    # Create model registry entry with metadata
     return (
-        metrics_df
-        .withColumn("model_name", F.lit("taxi_fare_prediction_model"))
-        .withColumn("model_version", F.lit("v1.0"))
-        .withColumn("model_status", F.lit("active"))
-        .withColumn("catalog", F.lit("taxi_mlops_prod"))
-        .withColumn("schema", F.lit("default"))
-        .withColumn("description", F.lit("Linear regression model for taxi fare prediction based on trip characteristics"))
+        # ← Correction clé : readStream au lieu de dlt.read
+        spark.readStream.table("taxi_mlops_prod.medoune_fall.ml_model_training")
+        .withColumn("model_name",    F.lit("taxi_fare_prediction_model"))
+        .withColumn("model_version", F.lit("v1.0"))   # ← changer ici entre les runs
+        .withColumn("model_status",  F.lit("active"))
+        .withColumn("catalog",       F.lit("taxi_mlops_prod"))
+        .withColumn("schema",        F.lit("medoune_fall"))
+        .withColumn("description",   F.lit("Baseline v1.0 : sans nouvelles features"))
         .withColumn("registered_at", F.current_timestamp())
         .select(
             "model_name",
